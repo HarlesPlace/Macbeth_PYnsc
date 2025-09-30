@@ -2,12 +2,32 @@ class Macbeth:
     def __init__(self):
         self.criterias = []
         self.alternatives = []
+        self.judgment_matrix = []
     
     def add_criteria(self, name, type):
         self.criterias.append(Criteria(name, type))
+        self._expand_matrix()
 
     def add_alternative(self, name):
         self.alternatives.append(Alternative(name))
+
+    def _expand_matrix(self):
+        n = len(self.criterias)
+        for row in self.judgment_matrix:
+            row.append(None)
+        self.judgment_matrix.append([None] * n)
+
+    def _swap_matrix_rows(self, i, j):
+        """Troca as linhas i e j da matriz."""
+        self.judgment_matrix[i], self.judgment_matrix[j] = (
+            self.judgment_matrix[j],
+            self.judgment_matrix[i],
+        )
+
+    def _swap_matrix_cols(self, i, j):
+        """Troca as colunas i e j da matriz."""
+        for row in self.judgment_matrix:
+            row[i], row[j] = row[j], row[i]
 
     def show_criteria(self, detailed=False):
         """Exibe os critérios na ordem atual com suas posições.
@@ -29,6 +49,8 @@ class Macbeth:
         if idx1 is None or idx2 is None:
             raise ValueError("One or both criterias not found")
         self.criterias[idx1], self.criterias[idx2] = self.criterias[idx2], self.criterias[idx1]
+        self._swap_matrix_rows(idx1, idx2)
+        self._swap_matrix_cols(idx1, idx2)
 
     def move_up(self, name):
         """Move o critério `name` uma posição para cima (se possível)."""
@@ -37,6 +59,8 @@ class Macbeth:
                 if i == 0:
                     return  # já está no topo
                 self.criterias[i], self.criterias[i-1] = self.criterias[i-1], self.criterias[i]
+                self._swap_matrix_rows(i, i-1)
+                self._swap_matrix_cols(i, i-1)
                 return
         raise ValueError(f"Criteria '{name}' not found.")
 
@@ -47,6 +71,8 @@ class Macbeth:
                 if i == len(self.criterias) - 1:
                     return  # já está no fim
                 self.criterias[i], self.criterias[i+1] = self.criterias[i+1], self.criterias[i]
+                self._swap_matrix_rows(i, i+1)
+                self._swap_matrix_cols(i, i+1)
                 return
         raise ValueError(f"Criteria '{name}' not found.")
     
