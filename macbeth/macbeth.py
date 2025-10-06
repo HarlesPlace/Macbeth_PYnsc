@@ -1,10 +1,12 @@
+import csv
+
 class Macbeth:
     def __init__(self):
         self.criterias = []
         self.alternatives = []
         self.judgment_matrix = []
     
-    def add_criteria(self, name, type):
+    def add_criteria(self, name, type="+"):
         self.criterias.append(Criteria(name, type))
         self._expand_matrix()
 
@@ -76,6 +78,74 @@ class Macbeth:
                 return
         raise ValueError(f"Criteria '{name}' not found.")
     
+    def import_judments_from_csv(self, filepath):
+        """Importa a matriz de julgamentos de um CSV."""
+        with open(filepath, newline='', encoding="utf-8") as f:
+            reader = csv.reader(f)
+            data = list(reader) 
+
+        n = len(data)
+        if n != len(self.criterias):        # precisa ter mesmo número de critérios
+            raise ValueError("Número de critérios não bate com a matriz.")
+
+        self.judgment_matrix = [[float(x) for x in row] for row in data]
+    
+    def import_criterias_and_judments_from_csv(self, filepath):
+        """Importa matriz de julgamentos de um CSV e recria critérios e matriz."""
+        with open(filepath, newline='', encoding="utf-8") as f:
+            reader = csv.reader(f)
+            data = list(reader)
+
+        if not data or len(data) < 2:
+            raise ValueError("Arquivo CSV vazio ou inválido.")
+
+        col_names = [h.strip() for h in data[0][1:]]
+        n = len(col_names)
+
+        self.criterias = [Criteria(name) for name in col_names] # recria a lista com base nos nomes do CSV
+            
+        matrix = [[0.0 for _ in range(n)] for _ in range(n)]
+
+        for i, row in enumerate(data[1:]):  # ignora o cabeçalho
+            row_name = row[0].strip()
+            if row_name != col_names[i]:
+                print(f"Aviso: critério da linha {i+1} ({row_name}) difere do cabeçalho ({col_names[i]})")
+            for j, val in enumerate(row[1:]):
+                try:
+                    matrix[i][j] = float(val)
+                except ValueError:
+                    raise ValueError(f"Valor inválido na posição ({i},{j}): '{val}'")
+
+        self.judgment_matrix = matrix
+
+    def export_matrix_to_csv(self, filepath):
+        """Exporta a matriz de julgamentos atual para um CSV com cabeçalho e nomes de critérios."""
+        if not hasattr(self, "judgment_matrix") or not self.judgment_matrix:
+            raise ValueError("No judgment matrix to export ")
+
+        if not self.criterias:
+            raise ValueError("Criterias list empty - nothing to export")
+
+        names = [c.name for c in self.criterias]
+        n = len(names)
+
+        if len(self.judgment_matrix) != n or any(len(row) != n for row in self.judgment_matrix):
+            raise ValueError("Dimension of the judgment matrix and number of criterias doesn't match")
+        rows = []
+
+        header = [""] + names  # Cabeçalho: ["", C1, C2, C3, ...]
+        rows.append(header)
+
+        for i, name in enumerate(names):
+            row = [name] + [self.judgment_matrix[i][j] for j in range(n)]
+            rows.append(row)
+
+        with open(filepath, mode="w", newline='', encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerows(rows)
+
+        print(f"Judgment matrix successfuly exported to '{filepath}'")
+
 class Criteria:
     def __init__(self, name, type="+"):
         if type not in {"+", "-"}:
