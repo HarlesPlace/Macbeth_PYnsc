@@ -145,6 +145,61 @@ class Macbeth:
             writer.writerows(rows)
 
         print(f"Judgment matrix successfuly exported to '{filepath}'")
+    
+    def interactive_judgment_input(self):
+        """Constrói interativamente a matriz de julgamentos pedindo preferências ao usuário."""
+        if not self.criterias:
+            print("No criteria defined. Please add criteria first.")
+            return
+
+        names = [c.name for c in self.criterias]
+        n = len(names)
+        matrix = [[0.0 for _ in range(n)] for _ in range(n)]
+
+        print("\n=== MACBETH INTERACTIVE JUDGMENT MODE ===")
+        print("Difference levels (0 = Indifference, 6 = Extreme):")
+        print("0-Equal | 1-Very Weak | 2-Weak | 3-Moderate | 4-Strong | 5-Very Strong | 6-Extreme")
+        print("Type 'q' at any time to quit.\n")
+
+        for i in range(n):
+            for j in range(i+1, n):
+                while True:
+                    print(f"\nComparing: {names[i]}  ×  {names[j]}")
+                    val = input("How much is the first criterion preferred over the second? (0-6): ").strip()
+                    if val.lower() == "q":
+                        print("Operation canceled.")
+                        return
+                    try:
+                        v = int(val)
+                        if 0 <= v <= 6:
+                            matrix[i][j] = v
+                            matrix[j][i] = -v  # valor recíproco
+                            break
+                        else:
+                            print("Invalid value. Please enter a number between 0 and 6.")
+                    except ValueError:
+                        print("Invalid input. Please enter a number between 0 and 6.")
+
+                # Exibe a matriz parcial
+                print("\nCurrent judgment matrix:")
+                self._print_matrix_preview(names, matrix)
+
+        print("\nFinal proposed matrix:")
+        self._print_matrix_preview(names, matrix)
+        confirm = input("\nConfirm and replace the current judgment matrix? (Y/N): ").strip().lower()
+        if confirm == "s":
+            self.judgment_matrix = matrix
+            print("Judgment matrix successfully updated!")
+        else:
+            print("Matrix discarded.")
+
+    def _print_matrix_preview(self, names, matrix):
+        """Imprime a matriz de julgamentos em formato tabular."""
+        header = ["{:>12}".format("")] + [f"{n:>12}" for n in names]
+        print("".join(header))
+        for i, name in enumerate(names):
+            row = [f"{name:>12}"] + [f"{matrix[i][j]:>12}" for j in range(len(names))]
+            print("".join(row))
 
 class Criteria:
     def __init__(self, name, type="+"):
