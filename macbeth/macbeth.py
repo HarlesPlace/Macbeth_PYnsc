@@ -1,12 +1,18 @@
-import csv
+import csv, pulp
 
 class Macbeth:
     def __init__(self):
         self.criterias = []
         self.alternatives = []
         self.judgment_matrix = []
+        self.classes = {"Very Weak": 1, "Weak": 2, "Moderate": 3, "Strong": 4, "Very Strong": 5, "Extreme": 6}
+        self.classesBoundaries = []
+        self.consistence_checked = False
+        self.c_min = None
+        self.consistent_judgment = False
     
     def add_criteria(self, name, type="+"):
+        self.consistence_checked = False
         self.criterias.append(Criteria(name, type))
         self._expand_matrix()
 
@@ -34,7 +40,7 @@ class Macbeth:
     def show_criteria(self, detailed=False):
         """Exibe os critérios na ordem atual com suas posições.
         Se detailed=True, mostra também peso e tipo."""
-        for i, c in enumerate(self.criteria, start=1):
+        for i, c in enumerate(self.criterias, start=1):
             if detailed:
                 print(f"{i}. {c.name} (weight={c.weight}, type={c.type})")
             else:
@@ -42,6 +48,7 @@ class Macbeth:
 
     def swap_criteria(self, name1, name2):
         """Troca a posição de dois critérios."""
+        self.consistence_checked = False
         idx1, idx2 = None, None
         for i, c in enumerate(self.criterias):
             if c.name == name1:
@@ -56,6 +63,7 @@ class Macbeth:
 
     def move_up(self, name):
         """Move o critério `name` uma posição para cima (se possível)."""
+        self.consistence_checked = False
         for i, c in enumerate(self.criterias):
             if c.name == name:
                 if i == 0:
@@ -68,6 +76,7 @@ class Macbeth:
 
     def move_down(self, name):
         """Move o critério `name` uma posição para baixo (se possível)."""
+        self.consistence_checked = False
         for i, c in enumerate(self.criterias):
             if c.name == name:
                 if i == len(self.criterias) - 1:
@@ -80,6 +89,7 @@ class Macbeth:
     
     def import_judments_from_csv(self, filepath):
         """Importa a matriz de julgamentos de um CSV."""
+        self.consistence_checked = False
         with open(filepath, newline='', encoding="utf-8") as f:
             reader = csv.reader(f)
             data = list(reader) 
@@ -92,8 +102,9 @@ class Macbeth:
     
     def import_criterias_and_judments_from_csv(self, filepath):
         """Importa matriz de julgamentos de um CSV e recria critérios e matriz."""
+        self.consistence_checked = False
         with open(filepath, newline='', encoding="utf-8") as f:
-            reader = csv.reader(f)
+            reader = csv.reader(f, delimiter=';')
             data = list(reader)
 
         if not data or len(data) < 2:
@@ -200,6 +211,76 @@ class Macbeth:
         for i, name in enumerate(names):
             row = [f"{name:>12}"] + [f"{matrix[i][j]:>12}" for j in range(len(names))]
             print("".join(row))
+    
+    def check_consistency(self):
+        """Verifica a consistência dos julgamentos da matriz de julgamentos usando o programa _MC1."""
+        if self.consistence_checked:
+            print("\n Consistency already checked.")
+            if self.consistent_judgment:
+                print("\n The judgment matrix is consistent.")
+            else:
+                print("\n The judgment matrix is NOT consistent.")
+            return self.consistent_judgment
+        self.c_min = self._MC1()
+        self.consistence_checked = True
+        self.consistent_judgment = self.c_min == 0
+        if self.consistent_judgment:
+            print("The judgment matrix is consistent.")
+        else:
+            print("The judgment matrix is NOT consistent.")
+        return self.consistent_judgment
+    
+    def _MC1(self):
+        """Programa MC1 de MACBETH para determinar o valor de incoerência c_min."""
+        prob = pulp.LpProblem("Minimizar_c", pulp.LpMinimize)
+        theta = 0.001
+        c = pulp.LpVariable("c", lowBound=0)
+
+        p = {}
+        for i in range(1,len(self.criterias)+1):
+            p[i] = pulp.LpVariable(f"p{i}", lowBound=0) 
+
+        s = {}
+        for i in range(0, len(self.classes)):
+            s[i] = pulp.LpVariable(f"s{i}", lowBound=0)
+        
+        # 1
+        prob += s[0] == 0, "R_s0_fixo"
+        prob += s[1] == 1, "R_s1_fixo"
+
+        # 2
+        for i in range(2, len(self.classes)):
+            prob += s[i] - s[i-1] >= 1, f"R_s{i}_ordem_minima"
+
+        # 3
+        for i in range(2, len(self.criterias)+1):
+            for j in range(1, i):
+                # p_i - p_j >= theta
+                prob += p[i] - p[j] >= theta, f"R_{i}_{j}_ordem_minima"
+        
+        # 4
+        prob += p[1] == 0, "R_p1_fixo"
+
+        # 5-6
+        for k in range(1,len(self.classes)+1):
+            for i in range(len(self.criterias)):
+                for j in range(i+1,len(self.criterias)):
+                    if self.judgment_matrix[i][j] == k:
+                        if k == len(self.classes): 
+                            prob += p[j+1] - p[i+1] >= theta + s[k-1] - c, f"R_{i+1}_{j+1}_classe_{k}_L"
+                        else:
+                            prob += p[j+1] - p[i+1] >= theta + s[k-1] - c, f"R_{i+1}_{j+1}_classe_{k}_L"
+                            prob += p[j+1] - p[i+1] <= s[k] + c, f"R_{i+1}_{j+1}_classe_{k}_U"
+        
+        prob += c, "Funcao_Objetivo"
+        prob.solve()
+
+        print(f"Status: {pulp.LpStatus[prob.status]}")
+        if prob.status == pulp.LpStatusOptimal:
+            c_min_result = pulp.value(prob.objective)
+            print(f"\nValor Mínimo de c (c_min): {c_min_result:.6f}")
+            
+        return c_min_result
 
 class Criteria:
     def __init__(self, name, type="+"):
