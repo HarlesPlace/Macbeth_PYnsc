@@ -256,31 +256,142 @@ class Macbeth:
         for i in range(2, len(self.criterias)+1):
             for j in range(1, i):
                 # p_i - p_j >= theta
-                prob += p[i] - p[j] >= theta, f"R_{i}_{j}_ordem_minima"
+                prob += p[j] - p[i] >= theta, f"R_{j}_{i}_ordem_minima"
         
         # 4
-        prob += p[1] == 0, "R_p1_fixo"
+        prob += p[len(self.criterias)] == 0, "R_pMAX_fixo"
 
         # 5-6
         for k in range(1,len(self.classes)+1):
             for i in range(len(self.criterias)):
                 for j in range(i+1,len(self.criterias)):
+                    pi = i + 1
+                    pj = j + 1
+                    pi_index = len(self.classes) - pi
+                    pj_index = len(self.classes) - pj
                     if self.judgment_matrix[i][j] == k:
                         if k == len(self.classes): 
-                            prob += p[j+1] - p[i+1] >= theta + s[k-1] - c, f"R_{i+1}_{j+1}_classe_{k}_L"
+                            prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
                         else:
-                            prob += p[j+1] - p[i+1] >= theta + s[k-1] - c, f"R_{i+1}_{j+1}_classe_{k}_L"
-                            prob += p[j+1] - p[i+1] <= s[k] + c, f"R_{i+1}_{j+1}_classe_{k}_U"
+                            prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
+                            prob += p[pi] - p[pj] <= s[k] + c, f"R_{pi_index}_{pj_index}_classe_{k}_U"
         
         prob += c, "Funcao_Objetivo"
-        prob.solve()
+        prob.solve(pulp.PULP_CBC_CMD(msg=False))
 
         print(f"Status: {pulp.LpStatus[prob.status]}")
         if prob.status == pulp.LpStatusOptimal:
             c_min_result = pulp.value(prob.objective)
-            print(f"\nValor Mínimo de c (c_min): {c_min_result:.6f}")
+            print(f"\n Valor Mínimo de c (c_min): {c_min_result:.6f}")
             
         return c_min_result
+    
+    def _MC2(self):
+        """Programa MC2 Do MACBETH"""
+        prob = pulp.LpProblem("IntervalosDeClasse", pulp.LpMinimize)
+        theta = 0.001
+        c = self.c_min
+
+        p = {}
+        for i in range(1,len(self.criterias)+1):
+            p[i] = pulp.LpVariable(f"p{len(self.criterias)+1-i}", lowBound=0) 
+
+        s = {}
+        for i in range(0, len(self.classes)):
+            s[i] = pulp.LpVariable(f"s{i}", lowBound=0)
+        
+        # 1
+        prob += s[0] == 0, "s0_fixo"
+        prob += s[1] == 1, "s1_fixo"
+
+        # 2
+        for i in range(2, len(self.classes)):
+            prob += s[i] - s[i-1] >= 1, f"s{i}_ordem_minima"
+
+        # 3
+        for i in range(2, len(self.criterias)+1):
+            for j in range(1, i):
+                # p_i - p_j >= theta
+                prob += p[j] - p[i] >= theta, f"Rinit_{j}_{i}_ordem_minima"
+        
+        # 4
+        prob += p[len(self.criterias)] == 0, "pmax_fixo"
+
+        # 5' - 9
+        beta = {}
+        gamma = {}
+        alpha = {}
+        delta = {}
+        epsilon = {}
+        eta = {}
+        objetivo_eps_eta = []
+        objetivo_alpha = []
+   
+        for i in range(len(self.criterias)):
+            for j in range(i+1,len(self.criterias)):
+                k = self.judgment_matrix[i][j]  
+                if k == 0:
+                    continue # ignora indiferenças
+                pi = i + 1
+                pj = j + 1
+                pi_index = len(self.classes) - pi
+                pj_index = len(self.classes) - pj
+                if k == len(self.classes): 
+                    # 6'
+                    prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
+                    
+                else:
+                    # 5'
+                    prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
+                    prob += p[pi] - p[pj] <= s[k] + c, f"R_{pi_index}_{pj_index}_classe_{k}_U"
+                    # 7
+                    beta[(pi, pj)] = pulp.LpVariable(f"b_{pi_index}_{pj_index}", lowBound=0)
+                    gamma[(pi, pj)] = pulp.LpVariable(f"g_{pi_index}_{pj_index}", lowBound=0)
+                    prob += (p[pi] - p[pj] == s[k] + beta[(pi, pj)] - gamma[(pi, pj)]), f"BETAGAM_Eq_{pi_index}_{pj_index}_k{k}"
+                    # 9      
+                    epsilon[(pi, pj)] = pulp.LpVariable(f"e_{pi_index}_{pj_index}", lowBound=0)
+                    eta[(pi, pj)] = pulp.LpVariable(f"n_{pi_index}_{pj_index}", lowBound=0)
+                    prob += (p[pi] - p[pj] == epsilon[(pi, pj)] - eta[(pi, pj)] +(s[k] + s[k-1] + theta) / 2), f"EPETA_Eq_{pi_index}_{pj_index}_k{k}" # Centro do intervalo = (s[k] + s[k-1] + theta) / 2
+                    # Adiciona na função objetivo
+                    objetivo_eps_eta.append(epsilon[(pi, pj)])
+                    objetivo_eps_eta.append(eta[(pi, pj)])
+
+                if k != 1:
+                    # 8
+                    alpha[(pi, pj)] = pulp.LpVariable(f"a_{pi_index}_{pj_index}", lowBound=0)
+                    delta[(pi, pj)] = pulp.LpVariable(f"d_{pi_index}_{pj_index}", lowBound=0)
+                    prob += (p[pi] - p[pj] == s[k-1] + delta[(pi, pj)] - alpha[(pi, pj)] + theta), f"ALPHADelta_Eq_{pi_index}_{pj_index}_k{k}"
+                    if k == len(self.classes):
+                        # Adiciona na função objetivo
+                        objetivo_alpha.append(alpha[(pi, pj)])
+        
+        prob += pulp.lpSum(objetivo_eps_eta + objetivo_alpha), "Funcao_Objetivo_MC2_Min_Desvio"
+        prob.writeLP("mc2_debug.lp")
+
+        prob.solve(pulp.PULP_CBC_CMD(msg=False))
+
+        print(f"Status: {pulp.LpStatus[prob.status]}")
+        if prob.status == pulp.LpStatusOptimal:
+            for v in prob.variables():
+                print(v.name, "=", v.value())
+            
+            p_dict = {i: p[i].value() for i in p}
+
+            resultados = {
+                "status": pulp.LpStatusOptimal,
+                "objective": pulp.value(prob.objective),
+                "p": {i: p[i].value() for i in p},
+                "s": {i: s[i].value() for i in s},
+                "alpha": {(i, j): alpha[(i, j)].value() for (i, j) in alpha},
+                "beta": {(i, j): beta[(i, j)].value() for (i, j) in beta},
+                "gamma": {(i, j): gamma[(i, j)].value() for (i, j) in gamma},
+                "delta": {(i, j): delta[(i, j)].value() for (i, j) in delta},
+                "epsilon": {(i, j): epsilon[(i, j)].value() for (i, j) in epsilon},
+                "eta": {(i, j): eta[(i, j)].value() for (i, j) in eta}
+            }
+            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            print(p_dict)
+            return p_dict, resultados
 
 class Criteria:
     def __init__(self, name, type="+"):
