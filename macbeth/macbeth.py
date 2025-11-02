@@ -10,6 +10,7 @@ class Macbeth:
         self.consistence_checked = False
         self.c_min = None
         self.consistent_judgment = False
+        self.minimun_rank_value = 0 
     
     def add_criteria(self, name, type="+"):
         self.consistence_checked = False
@@ -259,7 +260,7 @@ class Macbeth:
                 prob += p[j] - p[i] >= theta, f"R_{j}_{i}_ordem_minima"
         
         # 4
-        prob += p[len(self.criterias)] == 0, "R_pMAX_fixo"
+        prob += p[len(self.criterias)] == self.minimun_rank_value, "R_pMAX_fixo"
 
         # 5-6
         for k in range(1,len(self.classes)+1):
@@ -294,7 +295,7 @@ class Macbeth:
 
         p = {}
         for i in range(1,len(self.criterias)+1):
-            p[i] = pulp.LpVariable(f"p{len(self.criterias)+1-i}", lowBound=0) 
+            p[i] = pulp.LpVariable(f"p{i}", lowBound=0)
 
         s = {}
         for i in range(0, len(self.classes)):
@@ -315,7 +316,7 @@ class Macbeth:
                 prob += p[j] - p[i] >= theta, f"Rinit_{j}_{i}_ordem_minima"
         
         # 4
-        prob += p[len(self.criterias)] == 1, "pmax_fixo"
+        prob += p[len(self.criterias)] == self.minimun_rank_value, "pmax_fixo"
 
         # 5' - 9
         beta = {}
@@ -401,7 +402,7 @@ class Macbeth:
 
         p = {}
         for i in range(1,len(self.criterias)+1):
-            p[i] = pulp.LpVariable(f"p{len(self.criterias)+1-i}", lowBound=0) 
+            p[i] = pulp.LpVariable(f"p{i}", lowBound=0)
 
         s = {}
         for i in range(0, len(self.classes)):
@@ -422,7 +423,7 @@ class Macbeth:
                 prob += p[j] - p[i] >= theta, f"Rinit_{j}_{i}_ordem_minima"
         
         # 4
-        prob += p[len(self.criterias)] == 1, "pmax_fixo"
+        prob += p[len(self.criterias)] == self.minimun_rank_value, "pmax_fixo"
 
         # 5' - 8
         beta = {}
@@ -490,6 +491,95 @@ class Macbeth:
             print(beta_dict)
             return alpha_dict, beta_dict, resultados
 
+    def _MC4(self):
+        """Programa MC4 Do MACBETH"""
+        prob = pulp.LpProblem("IntervalosDeClasse", pulp.LpMinimize)
+        theta = 0.001
+
+        p = {}
+        for i in range(1,len(self.criterias)+1):
+            p[i] = pulp.LpVariable(f"p{i}", lowBound=0) 
+
+        s = {}
+        for i in range(0, len(self.classes)):
+            s[i] = pulp.LpVariable(f"s{i}", lowBound=0)
+        
+        # 1
+        prob += s[0] == 0, "s0_fixo"
+        prob += s[1] == 1, "s1_fixo"
+
+        # 2
+        for i in range(2, len(self.classes)):
+            prob += s[i] - s[i-1] >= 1, f"s{i}_ordem_minima"
+
+        # 3
+        for i in range(2, len(self.criterias)+1):
+            for j in range(1, i):
+                # p_i - p_j >= theta
+                prob += p[i] - p[j] >= theta, f"Rinit_{i}_{j}_ordem_minima"
+        
+        # 4
+        prob += p[1] == self.minimun_rank_value, "pmax_fixo"
+
+        # 7 - 8
+        beta = {}
+        gamma = {}
+        alpha = {}
+        delta = {}
+        objetivo_alpha_beta = []
+        for i in range(len(self.criterias)):
+            for j in range(i+1,len(self.criterias)):
+                k = self.judgment_matrix[i][j]  
+                if k == 0:
+                    continue # ignora indiferenças
+                pi = i + 1
+                pj = j + 1
+                pi_index = len(self.classes) - pi+1
+                pj_index = len(self.classes) - pj+1
+                if k != len(self.classes): 
+                    # 7
+                    beta[(pi, pj)] = pulp.LpVariable(f"b_{pi_index}_{pj_index}", lowBound=0)
+                    gamma[(pi, pj)] = pulp.LpVariable(f"g_{pi_index}_{pj_index}", lowBound=0)
+                    prob += (p[pj] - p[pi] == s[k] + beta[(pi, pj)] - gamma[(pi, pj)]), f"BETAGAM_Eq_{pi_index}_{pj_index}_k{k}"
+                    objetivo_alpha_beta.append(beta[(pi, pj)])
+
+                if k != 1:
+                    # 8
+                    alpha[(pi, pj)] = pulp.LpVariable(f"a_{pi_index}_{pj_index}", lowBound=0)
+                    delta[(pi, pj)] = pulp.LpVariable(f"d_{pi_index}_{pj_index}", lowBound=0)
+                    prob += (p[pj] - p[pi] == s[k-1] + delta[(pi, pj)] - alpha[(pi, pj)] + theta), f"ALPHADelta_Eq_{pi_index}_{pj_index}_k{k}"
+                    objetivo_alpha_beta.append(alpha[(pi, pj)])
+        
+        prob += pulp.lpSum(objetivo_alpha_beta), "Funcao_Objetivo_MC4"
+        prob.writeLP("mc4_debug.lp")
+
+        prob.solve(pulp.PULP_CBC_CMD(msg=False))
+
+        print(f"Status: {pulp.LpStatus[prob.status]}")
+        if prob.status == pulp.LpStatusOptimal:
+            for v in prob.variables():
+                print(v.name, "=", v.value())
+            
+            alpha_dict = {i: alpha[i].value() for i in alpha}
+            beta_dict = {i: beta[i].value() for i in beta}
+
+            resultados = {
+                "status": pulp.LpStatusOptimal,
+                "objective": pulp.value(prob.objective),
+                "p": {i: p[i].value() for i in p},
+                "s": {i: s[i].value() for i in s},
+                "alpha": {(i, j): alpha[(i, j)].value() for (i, j) in alpha},
+                "beta": {(i, j): beta[(i, j)].value() for (i, j) in beta},
+                "gamma": {(i, j): gamma[(i, j)].value() for (i, j) in gamma},
+                "delta": {(i, j): delta[(i, j)].value() for (i, j) in delta},
+            }
+            print("MC4 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            print("Alpha")
+            print(alpha_dict)
+            print("Beta")
+            print(beta_dict)
+            return alpha_dict, beta_dict, resultados
+        
 class Criteria:
     def __init__(self, name, type="+"):
         if type not in {"+", "-"}:
