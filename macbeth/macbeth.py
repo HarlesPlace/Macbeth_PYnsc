@@ -1,4 +1,5 @@
 import csv, pulp
+from colorama import Fore, Style
 
 class Macbeth:
     def __init__(self):
@@ -11,6 +12,7 @@ class Macbeth:
         self.c_min = None
         self.consistent_judgment = False
         self.minimun_rank_value = 0 
+        self.sensibility_value = 0.001 #sugerido 0.001 ou 0.0001
     
     def add_criteria(self, name, type="+"):
         self.consistence_checked = False
@@ -212,6 +214,44 @@ class Macbeth:
         for i, name in enumerate(names):
             row = [f"{name:>12}"] + [f"{matrix[i][j]:>12}" for j in range(len(names))]
             print("".join(row))
+
+    def _print_colored_matrix(self, alpha, beta, title = ""):
+        """
+        Função auxiliar para imprimir a matriz de julgamentos com destaque para inconsistências.
+        Recebe dicionários alpha e beta (pares (i,j): valor), e um título descritivo.
+        """
+        print(f"\n{title}\n")
+        n = len(self.judgment_matrix)
+        criterios = [c.name for c in self.criterias]
+        # Largura dinâmica de coluna
+        col_width = max(len(c) for c in criterios) + 8
+        # Cabeçalho
+        header = " " * (col_width) + "".join(f"{nome:^{col_width}}" for nome in criterios)
+        print(header)
+        print(" " * (col_width - 2) + "-" * (col_width * n + 2))
+        # Corpo da matriz
+        for i in range(n):
+            linha_str = f"{criterios[i]:<{col_width-2}}| "
+            for j in range(n):
+                if j <= i:
+                    cell = "·".center(col_width)
+                else:
+                    val = self.judgment_matrix[i][j]
+                    simbolo, cor = "", ""
+                    if (i+1, j+1) in alpha:  # destacar α (reduzir)
+                        simbolo = "↓"
+                        cor = Fore.RED
+                    elif (i+1, j+1) in beta:  # destacar β (aumentar)
+                        simbolo = "↑"
+                        cor = Fore.GREEN
+                    texto = f"{val:^5}{simbolo:^2}"
+                    cell = f"{cor}{texto.center(col_width)}{Style.RESET_ALL}"
+                linha_str += cell
+            print(linha_str)
+        # Legenda
+        print("\nLegenda:")
+        print(f"{Fore.RED}↓{Style.RESET_ALL} → reduzir a classe (alpha)")
+        print(f"{Fore.GREEN}↑{Style.RESET_ALL} → aumentar a classe (beta)\n")
     
     def check_consistency(self):
         """Verifica a consistência dos julgamentos da matriz de julgamentos usando o programa _MC1."""
@@ -223,18 +263,58 @@ class Macbeth:
                 print("\n The judgment matrix is NOT consistent.")
             return self.consistent_judgment
         self.c_min = self._MC1()
+        print(f"\n Valor Mínimo de c (c_min): {self.c_min:.6f}")
         self.consistence_checked = True
-        self.consistent_judgment = self.c_min == 0
+        self.consistent_judgment = self.c_min <= self.sensibility_value*10 #verificar esse limiar
         if self.consistent_judgment:
             print("The judgment matrix is consistent.")
         else:
             print("The judgment matrix is NOT consistent.")
         return self.consistent_judgment
     
+    def hilight_inconsistencies(self):
+        """
+        Hilight the inconsistencys in the judgment matrix based on MC3.
+        This function indicates which judgments contribute to inconsistency, maybe one
+        or more judgments need to be revised.        
+        """
+        if self.consistence_checked:
+            if self.consistent_judgment:
+                print("\n The judgment matrix is consistent. No inconsistencies to highlight.")
+                return
+            else:
+                alpha, beta = self._MC3()
+                filtered_alpha = {k: v for k, v in alpha.items() if v >= 1e-6}
+                filtered_beta  = {k: v for k, v in beta.items() if v >= 1e-6}
+                self._print_colored_matrix(filtered_alpha, filtered_beta,"Judgment matrix with inconsistancies:")
+                print("\n Run sugest_corrections() to calculate best solution")
+        else:
+            print("Consistency not checked. Please run check_consistency() first.")
+            return
+    
+    def sugest_corrections(self):
+        """Sugere correções para os julgamentos inconsistentes com base no programa MC4."""
+        if self.consistence_checked:
+            if self.consistent_judgment:
+                print("\n The judgment matrix is consistent. No corrections needed.")
+                return
+            else:
+                # Exemplo
+                alpha, beta = self._MC4()
+                max_alpha = max(alpha.values()) if alpha else 0
+                max_beta = max(beta.values()) if beta else 0
+                limite = 0.3 * max(max_alpha, max_beta)  # 30% do valor máximo
+                filtered_alpha = {k: v for k, v in alpha.items() if v >= limite}
+                filtered_beta  = {k: v for k, v in beta.items() if v >= limite}
+                self._print_colored_matrix(filtered_alpha, filtered_beta,"Suggested corrections for inconsistent judgments:")    
+        else:
+            print("Consistency not checked. Please run check_consistency() first.")
+            return
+        
     def _MC1(self):
         """Programa MC1 de MACBETH para determinar o valor de incoerência c_min."""
         prob = pulp.LpProblem("Minimizar_c", pulp.LpMinimize)
-        theta = 0.001
+        theta = self.sensibility_value
         c = pulp.LpVariable("c", lowBound=0)
 
         p = {}
@@ -278,19 +358,25 @@ class Macbeth:
                             prob += p[pi] - p[pj] <= s[k] + c, f"R_{pi_index}_{pj_index}_classe_{k}_U"
         
         prob += c, "Funcao_Objetivo"
-        prob.solve(pulp.PULP_CBC_CMD(msg=False))
+        prob.writeLP("mc1_debug.lp")
 
-        print(f"Status: {pulp.LpStatus[prob.status]}")
+        prob.solve(pulp.PULP_CBC_CMD(msg=False))
+        status = pulp.LpStatus[prob.status]
+
         if prob.status == pulp.LpStatusOptimal:
             c_min_result = pulp.value(prob.objective)
-            print(f"\n Valor Mínimo de c (c_min): {c_min_result:.6f}")
-            
-        return c_min_result
+            return c_min_result
+        else:
+            raise RuntimeError(
+            f"The optimization problem was not successfully solved.\n"
+            f"Status: {status}\n"
+            "Please check if the constraints are consistent and if the parameters are correct."
+            )
     
     def _MC2(self):
         """Programa MC2 Do MACBETH"""
         prob = pulp.LpProblem("IntervalosDeClasse", pulp.LpMinimize)
-        theta = 0.001
+        theta = self.sensibility_value
         c = self.c_min
 
         p = {}
@@ -370,34 +456,22 @@ class Macbeth:
         prob.writeLP("mc2_debug.lp")
 
         prob.solve(pulp.PULP_CBC_CMD(msg=False))
+        status = pulp.LpStatus[prob.status]
 
-        print(f"Status: {pulp.LpStatus[prob.status]}")
         if prob.status == pulp.LpStatusOptimal:
-            for v in prob.variables():
-                print(v.name, "=", v.value())
-            
             p_dict = {i: p[i].value() for i in p}
-
-            resultados = {
-                "status": pulp.LpStatusOptimal,
-                "objective": pulp.value(prob.objective),
-                "p": {i: p[i].value() for i in p},
-                "s": {i: s[i].value() for i in s},
-                "alpha": {(i, j): alpha[(i, j)].value() for (i, j) in alpha},
-                "beta": {(i, j): beta[(i, j)].value() for (i, j) in beta},
-                "gamma": {(i, j): gamma[(i, j)].value() for (i, j) in gamma},
-                "delta": {(i, j): delta[(i, j)].value() for (i, j) in delta},
-                "epsilon": {(i, j): epsilon[(i, j)].value() for (i, j) in epsilon},
-                "eta": {(i, j): eta[(i, j)].value() for (i, j) in eta}
-            }
-            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            print(p_dict)
-            return p_dict, resultados
-    
+            return p_dict
+        else:
+            raise RuntimeError(
+            f"The optimization problem was not successfully solved.\n"
+            f"Status: {status}\n"
+            "Please check if the constraints are consistent and if the parameters are correct."
+            )
+            
     def _MC3(self):
         """Programa MC3 Do MACBETH"""
         prob = pulp.LpProblem("IntervalosDeClasse", pulp.LpMinimize)
-        theta = 0.001
+        theta = self.sensibility_value
         c = self.c_min
 
         p = {}
@@ -465,36 +539,23 @@ class Macbeth:
         prob.writeLP("mc3_debug.lp")
 
         prob.solve(pulp.PULP_CBC_CMD(msg=False))
+        status = pulp.LpStatus[prob.status]
 
-        print(f"Status: {pulp.LpStatus[prob.status]}")
         if prob.status == pulp.LpStatusOptimal:
-            for v in prob.variables():
-                print(v.name, "=", v.value())
-            
             alpha_dict = {i: alpha[i].value() for i in alpha}
             beta_dict = {i: beta[i].value() for i in beta}
-
-            resultados = {
-                "status": pulp.LpStatusOptimal,
-                "objective": pulp.value(prob.objective),
-                "p": {i: p[i].value() for i in p},
-                "s": {i: s[i].value() for i in s},
-                "alpha": {(i, j): alpha[(i, j)].value() for (i, j) in alpha},
-                "beta": {(i, j): beta[(i, j)].value() for (i, j) in beta},
-                "gamma": {(i, j): gamma[(i, j)].value() for (i, j) in gamma},
-                "delta": {(i, j): delta[(i, j)].value() for (i, j) in delta},
-            }
-            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            print("Alpha")
-            print(alpha_dict)
-            print("Beta")
-            print(beta_dict)
-            return alpha_dict, beta_dict, resultados
+            return alpha_dict, beta_dict
+        else:
+            raise RuntimeError(
+            f"The optimization problem was not successfully solved.\n"
+            f"Status: {status}\n"
+            "Please check if the constraints are consistent and if the parameters are correct."
+            )
 
     def _MC4(self):
         """Programa MC4 Do MACBETH"""
         prob = pulp.LpProblem("IntervalosDeClasse", pulp.LpMinimize)
-        theta = 0.001
+        theta = self.sensibility_value
 
         p = {}
         for i in range(1,len(self.criterias)+1):
@@ -519,7 +580,7 @@ class Macbeth:
                 prob += p[i] - p[j] >= theta, f"Rinit_{i}_{j}_ordem_minima"
         
         # 4
-        prob += p[1] == self.minimun_rank_value, "pmax_fixo"
+        prob += p[1] == self.minimun_rank_value, "pmin_fixo"
 
         # 7 - 8
         beta = {}
@@ -554,31 +615,18 @@ class Macbeth:
         prob.writeLP("mc4_debug.lp")
 
         prob.solve(pulp.PULP_CBC_CMD(msg=False))
+        status = pulp.LpStatus[prob.status]
 
-        print(f"Status: {pulp.LpStatus[prob.status]}")
-        if prob.status == pulp.LpStatusOptimal:
-            for v in prob.variables():
-                print(v.name, "=", v.value())
-            
+        if prob.status == pulp.LpStatusOptimal:            
             alpha_dict = {i: alpha[i].value() for i in alpha}
             beta_dict = {i: beta[i].value() for i in beta}
-
-            resultados = {
-                "status": pulp.LpStatusOptimal,
-                "objective": pulp.value(prob.objective),
-                "p": {i: p[i].value() for i in p},
-                "s": {i: s[i].value() for i in s},
-                "alpha": {(i, j): alpha[(i, j)].value() for (i, j) in alpha},
-                "beta": {(i, j): beta[(i, j)].value() for (i, j) in beta},
-                "gamma": {(i, j): gamma[(i, j)].value() for (i, j) in gamma},
-                "delta": {(i, j): delta[(i, j)].value() for (i, j) in delta},
-            }
-            print("MC4 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            print("Alpha")
-            print(alpha_dict)
-            print("Beta")
-            print(beta_dict)
-            return alpha_dict, beta_dict, resultados
+            return alpha_dict, beta_dict
+        else:
+            raise RuntimeError(
+            f"The optimization problem was not successfully solved.\n"
+            f"Status: {status}\n"
+            "Please check if the constraints are consistent and if the parameters are correct."
+            )
         
 class Criteria:
     def __init__(self, name, type="+"):
