@@ -6,7 +6,7 @@ class Macbeth:
         self.criterias = []
         self.alternatives = []
         self.judgment_matrix = []
-        self.classes = {"Very Weak": 1, "Weak": 2, "Moderate": 3, "Strong": 4, "Very Strong": 5, "Extreme": 6}
+        self.classes = {"Very Weak": 1.0, "Weak": 2.0, "Moderate": 3.0, "Strong": 4.0, "Very Strong": 5.0, "Extreme": 6.0}
         self.classesBoundaries = []
         self.consistence_checked = False
         self.consistent_judgment = False
@@ -121,7 +121,17 @@ class Macbeth:
         if n != len(self.criterias):        # precisa ter mesmo número de critérios
             raise ValueError("Número de critérios não bate com a matriz.")
 
-        self.judgment_matrix = [[float(x) for x in row] for row in data]
+        #self.judgment_matrix = [[float(x) for x in row] for row in data]
+        valid_values = set(self.classes.values())
+
+        for i, row in enumerate(data):
+            converted_row = []
+            for j, x in enumerate(row):
+                value = float(x)
+                if value not in valid_values:
+                    raise ValueError(f"Invalid judgment value at position ({i+1},{j+1}): {value}")
+                converted_row.append(value)
+            self.judgment_matrix.append(converted_row)
     
     def import_criterias_and_judments_from_csv(self, filepath):
         """Importa matriz de julgamentos de um CSV e recria critérios e matriz."""
@@ -139,7 +149,7 @@ class Macbeth:
         n = len(col_names)
 
         self.criterias = [Criteria(name) for name in col_names] # recria a lista com base nos nomes do CSV
-            
+        valid_values = set(self.classes.values())    
         matrix = [[0.0 for _ in range(n)] for _ in range(n)]
 
         for i, row in enumerate(data[1:]):  # ignora o cabeçalho
@@ -148,10 +158,12 @@ class Macbeth:
                 print(f"Aviso: critério da linha {i+1} ({row_name}) difere do cabeçalho ({col_names[i]})")
             for j, val in enumerate(row[1:]):
                 try:
-                    matrix[i][j] = float(val)
+                    value = float(val)
                 except ValueError:
                     raise ValueError(f"Valor inválido na posição ({i},{j}): '{val}'")
-
+                if (value not in valid_values) and value != 0.0:
+                    raise ValueError(f"Judgment value at position ({i},{j}): {value} does not match valid classes.")
+                matrix[i][j] = value
         self.judgment_matrix = matrix
 
     def export_matrix_to_csv(self, filepath):
@@ -182,6 +194,24 @@ class Macbeth:
 
         print(f"Judgment matrix successfuly exported to '{filepath}'")
     
+    def judge(self, criteria1, criteria2, value):
+        """Adiciona um julgamento entre dois critérios na matriz de julgamentos."""
+        if criteria1 == criteria2:
+            raise ValueError("Cannot set judgment between the same criteria.")
+        if value not in self.classes.values():
+            raise ValueError("Judgment value does not match valid classes.")
+        for i, c in enumerate(self.criterias, start=1):
+            if c.name == criteria1:
+                idx1 = i - 1
+            if c.name == criteria2:
+                idx2 = i - 1
+        if idx2<idx1:
+            idx1, idx2 = idx2, idx1  # supoe-se que usuário errou a ordem
+        self.judgment_matrix[idx1][idx2] = float(value)
+        self.consistence_checked = False
+        self.consistent_judgment = False
+        self.weights_avaluated = False
+
     def interactive_judgment_input(self):
         """Constrói interativamente a matriz de julgamentos pedindo preferências ao usuário."""
         if not self.criterias:
@@ -209,7 +239,6 @@ class Macbeth:
                         v = float(val)
                         if 0 <= v <= 6:
                             matrix[i][j] = v
-                            matrix[j][i] = -v  # valor recíproco
                             break
                         else:
                             print("Invalid value. Please enter a number between 0 and 6.")
