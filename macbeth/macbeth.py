@@ -9,13 +9,15 @@ class Macbeth:
         self.classes = {"Very Weak": 1, "Weak": 2, "Moderate": 3, "Strong": 4, "Very Strong": 5, "Extreme": 6}
         self.classesBoundaries = []
         self.consistence_checked = False
-        self.c_min = None
         self.consistent_judgment = False
+        self.weights_avaluated = False
+        self.c_min = None
         self.minimun_rank_value = 0 
         self.sensibility_value = 0.001 #sugerido 0.001 ou 0.0001
 
     def set_minimun_rank_value(self, value):
         """Define um valor de base para o critério de menor importância."""
+        self.weights_avaluated = False
         self.minimun_rank_value = value
     
     def set_sensibility_value(self, value):
@@ -23,12 +25,17 @@ class Macbeth:
         Define o valor de sensibilidade (theta) para os programas MC.
         Sugerido 0.001 ou 0.0001.
         """
+        self.consistence_checked = False
+        self.consistent_judgment = False
+        self.weights_avaluated = False
         self.sensibility_value = value
     
     def add_criteria(self, name, type="+"):
-        self.consistence_checked = False
         self.criterias.append(Criteria(name, type))
         self._expand_matrix()
+        self.consistence_checked = False
+        self.consistent_judgment = False
+        self.weights_avaluated = False
 
     def add_alternative(self, name):
         self.alternatives.append(Alternative(name))
@@ -104,6 +111,8 @@ class Macbeth:
     def import_judments_from_csv(self, filepath):
         """Importa a matriz de julgamentos de um CSV."""
         self.consistence_checked = False
+        self.consistent_judgment = False
+        self.weights_avaluated = False
         with open(filepath, newline='', encoding="utf-8") as f:
             reader = csv.reader(f)
             data = list(reader) 
@@ -117,6 +126,8 @@ class Macbeth:
     def import_criterias_and_judments_from_csv(self, filepath):
         """Importa matriz de julgamentos de um CSV e recria critérios e matriz."""
         self.consistence_checked = False
+        self.consistent_judgment = False
+        self.weights_avaluated = False
         with open(filepath, newline='', encoding="utf-8") as f:
             reader = csv.reader(f, delimiter=';')
             data = list(reader)
@@ -195,7 +206,7 @@ class Macbeth:
                         print("Operation canceled.")
                         return
                     try:
-                        v = int(val)
+                        v = float(val)
                         if 0 <= v <= 6:
                             matrix[i][j] = v
                             matrix[j][i] = -v  # valor recíproco
@@ -206,25 +217,49 @@ class Macbeth:
                         print("Invalid input. Please enter a number between 0 and 6.")
 
                 # Exibe a matriz parcial
-                print("\nCurrent judgment matrix:")
-                self._print_matrix_preview(names, matrix)
+                self._print_matrix_preview(names, matrix, "Judgment Matrix Preview")
 
-        print("\nFinal proposed matrix:")
-        self._print_matrix_preview(names, matrix)
+        self._print_matrix_preview(names, matrix, "Final proposed matrix")
         confirm = input("\nConfirm and replace the current judgment matrix? (Y/N): ").strip().lower()
-        if confirm == "s":
+        if confirm == "y":
             self.judgment_matrix = matrix
+            self.consistence_checked = False
+            self.c_min = None
+            self.consistent_judgment = False
+            self.weights_avaluated = False
             print("Judgment matrix successfully updated!")
         else:
             print("Matrix discarded.")
 
-    def _print_matrix_preview(self, names, matrix):
-        """Imprime a matriz de julgamentos em formato tabular."""
-        header = ["{:>12}".format("")] + [f"{n:>12}" for n in names]
-        print("".join(header))
-        for i, name in enumerate(names):
-            row = [f"{name:>12}"] + [f"{matrix[i][j]:>12}" for j in range(len(names))]
-            print("".join(row))
+    def _print_matrix_preview(self, names, matrix, title=""):
+        """
+        Imprime a matriz de julgamentos em formato tabular, com alinhamento dinâmico.
+        Exibe uma estrutura semelhante à matriz colorida, mas sem setas ou cores.
+        """
+        print(f"\n{title}\n")
+
+        n = len(matrix)
+        # Calcula a largura ideal de cada coluna com base no maior nome
+        col_width = max(len(str(name)) for name in names) + 8
+
+        # Cabeçalho formatado
+        header = " " * col_width + "".join(f"{name:^{col_width}}" for name in names)
+        print(header)
+        print(" " * (col_width - 2) + "-" * (col_width * n + 2))
+
+        # Corpo da matriz
+        for i in range(n):
+            linha_str = f"{names[i]:<{col_width-2}}| "
+            for j in range(n):
+                # Usa ponto (·) na diagonal inferior, valor normal acima da diagonal
+                if j <= i:
+                    cell = "·".center(col_width)
+                else:
+                    val = matrix[i][j]
+                    texto = f"{val:^5}"
+                    cell = texto.center(col_width)
+                linha_str += cell
+            print(linha_str)
 
     def _print_colored_matrix(self, alpha, beta, title = ""):
         """
@@ -281,6 +316,7 @@ class Macbeth:
             print("The judgment matrix is consistent.")
         else:
             print("The judgment matrix is NOT consistent.")
+            print("\n Run hilight_inconsistencies() to check which judgments are inconsistent.")
         return self.consistent_judgment
     
     def hilight_inconsistencies(self):
