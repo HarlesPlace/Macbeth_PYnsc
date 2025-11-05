@@ -13,6 +13,17 @@ class Macbeth:
         self.consistent_judgment = False
         self.minimun_rank_value = 0 
         self.sensibility_value = 0.001 #sugerido 0.001 ou 0.0001
+
+    def set_minimun_rank_value(self, value):
+        """Define um valor de base para o critério de menor importância."""
+        self.minimun_rank_value = value
+    
+    def set_sensibility_value(self, value):
+        """
+        Define o valor de sensibilidade (theta) para os programas MC.
+        Sugerido 0.001 ou 0.0001.
+        """
+        self.sensibility_value = value
     
     def add_criteria(self, name, type="+"):
         self.consistence_checked = False
@@ -45,7 +56,7 @@ class Macbeth:
         Se detailed=True, mostra também peso e tipo."""
         for i, c in enumerate(self.criterias, start=1):
             if detailed:
-                print(f"{i}. {c.name} (weight={c.weight}, type={c.type})")
+                print(f"{i}. {c.name} (weight={c.weight:.3f}, type={c.type})")
             else:
                 print(f"{i}. {c.name}")
 
@@ -627,6 +638,23 @@ class Macbeth:
             f"Status: {status}\n"
             "Please check if the constraints are consistent and if the parameters are correct."
             )
+    
+    def avaluate_weights(self):
+        """Avalia os pesos dos critérios usando o programa MC2."""
+        if not self.consistence_checked:
+            print("Consistency not checked. Please run check_consistency() first.")
+            return
+        if not self.consistent_judgment:
+            print("The judgment matrix is NOT consistent. Please revise judgments or run sugest_corrections() first.")
+            return
+        p_dict = self._MC2()
+        # Normaliza os pesos
+        total = sum(p_dict.values())
+        for i, c in enumerate(self.criterias, start=1):
+            weight = p_dict[i] / total if total > 0 else 0
+            c.set_weight(weight)
+        print("\n Criteria weights successfully evaluated and updated.")
+        self.show_criteria(detailed=True)
         
 class Criteria:
     def __init__(self, name, type="+"):
