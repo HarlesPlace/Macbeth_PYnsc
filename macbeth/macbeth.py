@@ -10,14 +10,14 @@ class Macbeth:
         self.classesBoundaries = []
         self.consistence_checked = False
         self.consistent_judgment = False
-        self.weights_avaluated = False
+        self.weights_evaluated = False
         self.c_min = None
-        self.minimun_rank_value = 0 
+        self.minimun_rank_value = 1
         self.sensibility_value = 0.001 #sugerido 0.001 ou 0.0001
 
     def set_minimun_rank_value(self, value):
         """Define um valor de base para o critério de menor importância."""
-        self.weights_avaluated = False
+        self.weights_evaluated = False
         self.minimun_rank_value = value
     
     def set_sensibility_value(self, value):
@@ -27,7 +27,7 @@ class Macbeth:
         """
         self.consistence_checked = False
         self.consistent_judgment = False
-        self.weights_avaluated = False
+        self.weights_evaluated = False
         self.sensibility_value = value
     
     def add_criteria(self, name, type="+"):
@@ -35,7 +35,7 @@ class Macbeth:
         self._expand_matrix()
         self.consistence_checked = False
         self.consistent_judgment = False
-        self.weights_avaluated = False
+        self.weights_evaluated = False
 
     def add_alternative(self, name):
         self.alternatives.append(Alternative(name))
@@ -43,8 +43,8 @@ class Macbeth:
     def _expand_matrix(self):
         n = len(self.criterias)
         for row in self.judgment_matrix:
-            row.append(None)
-        self.judgment_matrix.append([None] * n)
+            row.append(0.0) # o correto é usar none para checar se foi preenchido, alterar depois
+        self.judgment_matrix.append([0.0] * n)
 
     def _swap_matrix_rows(self, i, j):
         """Troca as linhas i e j da matriz."""
@@ -66,6 +66,11 @@ class Macbeth:
                 print(f"{i}. {c.name} (weight={c.weight:.3f}, type={c.type})")
             else:
                 print(f"{i}. {c.name}")
+    
+    def show_judgment_matrix(self):
+        """Exibe a matriz de julgamentos atual."""
+        names = [c.name for c in self.criterias]
+        self._print_matrix_preview(names, self.judgment_matrix, "Current Judgment Matrix")
 
     def swap_criteria(self, name1, name2):
         """Troca a posição de dois critérios."""
@@ -112,7 +117,7 @@ class Macbeth:
         """Importa a matriz de julgamentos de um CSV."""
         self.consistence_checked = False
         self.consistent_judgment = False
-        self.weights_avaluated = False
+        self.weights_evaluated = False
         with open(filepath, newline='', encoding="utf-8") as f:
             reader = csv.reader(f)
             data = list(reader) 
@@ -137,7 +142,7 @@ class Macbeth:
         """Importa matriz de julgamentos de um CSV e recria critérios e matriz."""
         self.consistence_checked = False
         self.consistent_judgment = False
-        self.weights_avaluated = False
+        self.weights_evaluated = False
         with open(filepath, newline='', encoding="utf-8") as f:
             reader = csv.reader(f, delimiter=';')
             data = list(reader)
@@ -210,7 +215,7 @@ class Macbeth:
         self.judgment_matrix[idx1][idx2] = float(value)
         self.consistence_checked = False
         self.consistent_judgment = False
-        self.weights_avaluated = False
+        self.weights_evaluated = False
 
     def interactive_judgment_input(self):
         """Constrói interativamente a matriz de julgamentos pedindo preferências ao usuário."""
@@ -255,7 +260,7 @@ class Macbeth:
             self.consistence_checked = False
             self.c_min = None
             self.consistent_judgment = False
-            self.weights_avaluated = False
+            self.weights_evaluated = False
             print("Judgment matrix successfully updated!")
         else:
             print("Matrix discarded.")
@@ -348,7 +353,7 @@ class Macbeth:
             print("\n Run hilight_inconsistencies() to check which judgments are inconsistent.")
         return self.consistent_judgment
     
-    def hilight_inconsistencies(self):
+    def highlight_inconsistencies(self, analize=False):
         """
         Hilight the inconsistencys in the judgment matrix based on MC3.
         This function indicates which judgments contribute to inconsistency, maybe one
@@ -363,12 +368,19 @@ class Macbeth:
                 filtered_alpha = {k: v for k, v in alpha.items() if v >= 1e-6}
                 filtered_beta  = {k: v for k, v in beta.items() if v >= 1e-6}
                 self._print_colored_matrix(filtered_alpha, filtered_beta,"Judgment matrix with inconsistancies:")
+                if analize:
+                    print("\n Analysis of inconsistencies: \n")
+                    print("\n Alpha (↓) - Inferior violation of classes:")
+                    print(alpha)
+                    print("\n Beta (↑) - Superior violation of classes:")
+                    print(beta) 
+                    print("\n")
                 print("\n Run sugest_corrections() to calculate best solution")
         else:
             print("Consistency not checked. Please run check_consistency() first.")
             return
     
-    def sugest_corrections(self):
+    def sugest_corrections(self, analize=False):
         """Sugere correções para os julgamentos inconsistentes com base no programa MC4."""
         if self.consistence_checked:
             if self.consistent_judgment:
@@ -382,7 +394,14 @@ class Macbeth:
                 limite = 0.3 * max(max_alpha, max_beta)  # 30% do valor máximo
                 filtered_alpha = {k: v for k, v in alpha.items() if v >= limite}
                 filtered_beta  = {k: v for k, v in beta.items() if v >= limite}
-                self._print_colored_matrix(filtered_alpha, filtered_beta,"Suggested corrections for inconsistent judgments:")    
+                self._print_colored_matrix(filtered_alpha, filtered_beta,"Suggested corrections for inconsistent judgments:")
+                if analize:
+                    print("\n Analysis of suggested corrections:")
+                    print("\n Alpha (↓) - Inferior violation of classes:")
+                    print(alpha)
+                    print("\n Beta (↑) - Superior violation of classes:")
+                    print(beta) 
+                    print("\n") 
         else:
             print("Consistency not checked. Please run check_consistency() first.")
             return
@@ -475,7 +494,7 @@ class Macbeth:
         for i in range(2, len(self.criterias)+1):
             for j in range(1, i):
                 # p_i - p_j >= theta
-                prob += p[j] - p[i] >= theta, f"Rinit_{j}_{i}_ordem_minima"
+                prob += p[j] - p[i] >= theta, f"Rinit_{i}_{j}_ordem_minima"
         
         # 4
         prob += p[len(self.criterias)] == self.minimun_rank_value, "pmax_fixo"
@@ -497,8 +516,8 @@ class Macbeth:
                     continue # ignora indiferenças
                 pi = i + 1
                 pj = j + 1
-                pi_index = len(self.classes) - pi
-                pj_index = len(self.classes) - pj
+                pi_index = len(self.classes) - pi+1
+                pj_index = len(self.classes) - pj+1
                 if k == len(self.classes): 
                     # 6'
                     prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
@@ -704,20 +723,28 @@ class Macbeth:
             "Please check if the constraints are consistent and if the parameters are correct."
             )
     
-    def avaluate_weights(self):
+    def evaluate_weights(self, force = False):
         """Avalia os pesos dos critérios usando o programa MC2."""
         if not self.consistence_checked:
             print("Consistency not checked. Please run check_consistency() first.")
             return
-        if not self.consistent_judgment:
+        if force and self.consistent_judgment:
+            if self.weights_evaluated:
+                print("Judgement matrix is consistent and weights are already evaluated. No re-evaluation...")
+                return
+            else:
+                print("Judgement matrix is consistent, no need to force re-evaluation...")
+        elif not self.consistent_judgment and not force:
             print("The judgment matrix is NOT consistent. Please revise judgments or run sugest_corrections() first.")
             return
         p_dict = self._MC2()
+        print(p_dict)
         # Normaliza os pesos
         total = sum(p_dict.values())
         for i, c in enumerate(self.criterias, start=1):
             weight = p_dict[i] / total if total > 0 else 0
             c.set_weight(weight)
+        self.weights_evaluated = True
         print("\n Criteria weights successfully evaluated and updated.")
         self.show_criteria(detailed=True)
         
