@@ -1,7 +1,10 @@
 .vscode/
 __pycache__/
 test.py
+test2.py
+test3.py
 mc1_debug.lp
 mc2_debug.lp
 mc3_debug.lp
 mc4_debug.lp
+TestesSensibilidadeMacbeth/

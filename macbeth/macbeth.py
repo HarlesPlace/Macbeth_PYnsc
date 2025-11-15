@@ -12,8 +12,15 @@ class Macbeth:
         self.consistent_judgment = False
         self.weights_evaluated = False
         self.c_min = None
-        self.minimun_rank_value = 1
-        self.sensibility_value = 0.001 #sugerido 0.001 ou 0.0001
+        self.minimun_rank_value = 1.0
+        self.sensibility_value = 1.0
+        self.sugestion_gap = 0.9 # porcentagem
+
+    def configure_original_macbeth(self):
+        """Configura os parâmetros para o método original de MACBETH."""
+        self.set_minimun_rank_value(0.0)
+        self.set_sensibility_value(0.001)
+        self.set_sugestion_gap(0.9)
 
     def set_minimun_rank_value(self, value):
         """Define um valor de base para o critério de menor importância."""
@@ -23,12 +30,21 @@ class Macbeth:
     def set_sensibility_value(self, value):
         """
         Define o valor de sensibilidade (theta) para os programas MC.
-        Sugerido 0.001 ou 0.0001.
+        Sugerido 0.001.
         """
         self.consistence_checked = False
         self.consistent_judgment = False
         self.weights_evaluated = False
         self.sensibility_value = value
+
+    def set_sugestion_gap(self, value):
+        """
+        Define a porcentagem do valor máximo de alpha/beta para sugerir correções.
+        Sugerido 0.9 (90%).
+        """
+        if not (0 < value <= 1):
+            raise ValueError("Sugestion gap must be between 0 and 1.") 
+        self.sugestion_gap = value
     
     def add_criteria(self, name, type="+"):
         self.criterias.append(Criteria(name, type))
@@ -345,7 +361,7 @@ class Macbeth:
         self.c_min = self._MC1()
         print(f"\n Valor Mínimo de c (c_min): {self.c_min:.6f}")
         self.consistence_checked = True
-        self.consistent_judgment = self.c_min <= self.sensibility_value*10 #verificar esse limiar
+        self.consistent_judgment = self.c_min <= self.sensibility_value/3 #verificar esse limiar
         if self.consistent_judgment:
             print("The judgment matrix is consistent.")
         else:
@@ -353,7 +369,7 @@ class Macbeth:
             print("\n Run hilight_inconsistencies() to check which judgments are inconsistent.")
         return self.consistent_judgment
     
-    def highlight_inconsistencies(self, analize=False):
+    def highlight_inconsistencies(self, analyze=False):
         """
         Hilight the inconsistencys in the judgment matrix based on MC3.
         This function indicates which judgments contribute to inconsistency, maybe one
@@ -368,7 +384,7 @@ class Macbeth:
                 filtered_alpha = {k: v for k, v in alpha.items() if v >= 1e-6}
                 filtered_beta  = {k: v for k, v in beta.items() if v >= 1e-6}
                 self._print_colored_matrix(filtered_alpha, filtered_beta,"Judgment matrix with inconsistancies:")
-                if analize:
+                if analyze:
                     print("\n Analysis of inconsistencies: \n")
                     print("\n Alpha (↓) - Inferior violation of classes:")
                     print(alpha)
@@ -380,7 +396,7 @@ class Macbeth:
             print("Consistency not checked. Please run check_consistency() first.")
             return
     
-    def sugest_corrections(self, analize=False):
+    def sugest_corrections(self, analyze=False):
         """Sugere correções para os julgamentos inconsistentes com base no programa MC4."""
         if self.consistence_checked:
             if self.consistent_judgment:
@@ -389,13 +405,13 @@ class Macbeth:
             else:
                 # Exemplo
                 alpha, beta = self._MC4()
-                max_alpha = max(alpha.values()) if alpha else 0
-                max_beta = max(beta.values()) if beta else 0
-                limite = 0.3 * max(max_alpha, max_beta)  # 30% do valor máximo
+                max_alpha = max(alpha.values())
+                max_beta = max(beta.values()) 
+                limite = self.sugestion_gap*max(max_alpha, max_beta)  # 30% do valor máximo
                 filtered_alpha = {k: v for k, v in alpha.items() if v >= limite}
                 filtered_beta  = {k: v for k, v in beta.items() if v >= limite}
                 self._print_colored_matrix(filtered_alpha, filtered_beta,"Suggested corrections for inconsistent judgments:")
-                if analize:
+                if analyze:
                     print("\n Analysis of suggested corrections:")
                     print("\n Alpha (↓) - Inferior violation of classes:")
                     print(alpha)
@@ -508,7 +524,7 @@ class Macbeth:
         eta = {}
         objetivo_eps_eta = []
         objetivo_alpha = []
-   
+        # 5'-9
         for i in range(len(self.criterias)):
             for j in range(i+1,len(self.criterias)):
                 k = self.judgment_matrix[i][j]  
@@ -607,8 +623,8 @@ class Macbeth:
                     continue # ignora indiferenças
                 pi = i + 1
                 pj = j + 1
-                pi_index = len(self.classes) - pi
-                pj_index = len(self.classes) - pj
+                pi_index = len(self.classes) - pi+1
+                pj_index = len(self.classes) - pj+1
                 if k == len(self.classes): 
                     # 6'
                     prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
@@ -741,12 +757,17 @@ class Macbeth:
         print(p_dict)
         # Normaliza os pesos
         total = sum(p_dict.values())
+        MAX=0
         for i, c in enumerate(self.criterias, start=1):
             weight = p_dict[i] / total if total > 0 else 0
             c.set_weight(weight)
+            if weight>MAX:
+                MAX=weight
         self.weights_evaluated = True
         print("\n Criteria weights successfully evaluated and updated.")
         self.show_criteria(detailed=True)
+        for i, c in enumerate(self.criterias, start=1):
+            print(f"Criteria {i}: {c.name}, Weight: {c.weight*100/MAX:.4f} ")
         
 class Criteria:
     def __init__(self, name, type="+"):
