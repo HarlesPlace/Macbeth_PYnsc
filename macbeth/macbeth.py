@@ -6,7 +6,7 @@ class Macbeth:
         self.criterias = []
         self.alternatives = []
         self.judgment_matrix = []
-        self.classes = {"Very Weak": 1.0, "Weak": 2.0, "Moderate": 3.0, "Strong": 4.0, "Very Strong": 5.0, "Extreme": 6.0}
+        self.classes = {"Indiferent": 0.0, "Very Weak": 1.0, "Weak": 2.0, "Moderate": 3.0, "Strong": 4.0, "Very Strong": 5.0, "Extreme": 6.0}
         self.classesBoundaries = []
         self.consistence_checked = False
         self.consistent_judgment = False
@@ -433,7 +433,7 @@ class Macbeth:
             p[i] = pulp.LpVariable(f"p{i}", lowBound=0) 
 
         s = {}
-        for i in range(0, len(self.classes)):
+        for i in range(0, len(self.classes)-1):
             s[i] = pulp.LpVariable(f"s{i}", lowBound=0)
         
         # 1
@@ -441,7 +441,7 @@ class Macbeth:
         prob += s[1] == 1, "R_s1_fixo"
 
         # 2
-        for i in range(2, len(self.classes)):
+        for i in range(2, len(self.classes)-1):
             prob += s[i] - s[i-1] >= 1, f"R_s{i}_ordem_minima"
 
         # 3
@@ -454,19 +454,23 @@ class Macbeth:
         prob += p[len(self.criterias)] == self.minimun_rank_value, "R_pMAX_fixo"
 
         # 5-6
-        for k in range(1,len(self.classes)+1):
+        for k in range(0,len(self.classes)):
             for i in range(len(self.criterias)):
                 for j in range(i+1,len(self.criterias)):
                     pi = i + 1
                     pj = j + 1
-                    pi_index = len(self.classes) - pi
-                    pj_index = len(self.classes) - pj
+                    pi_index = len(self.classes) - pi-1
+                    pj_index = len(self.classes) - pj-1
                     if self.judgment_matrix[i][j] == k:
-                        if k == len(self.classes): 
-                            prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
+                        if k == 0:
+                            del prob.constraints[f"R_{pi}_{pj}_ordem_minima"]
+                            prob += p[pi] == p[pj], f"R_{pi_index}_{pj_index}_classe_{k}_INDIFERENTES"
                         else:
-                            prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
-                            prob += p[pi] - p[pj] <= s[k] + c, f"R_{pi_index}_{pj_index}_classe_{k}_U"
+                            if k == len(self.classes)-1: 
+                                prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
+                            else:
+                                prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
+                                prob += p[pi] - p[pj] <= s[k] + c, f"R_{pi_index}_{pj_index}_classe_{k}_U"
         
         prob += c, "Funcao_Objetivo"
         prob.writeLP("mc1_debug.lp")
@@ -495,7 +499,7 @@ class Macbeth:
             p[i] = pulp.LpVariable(f"p{i}", lowBound=0)
 
         s = {}
-        for i in range(0, len(self.classes)):
+        for i in range(0, len(self.classes)-1):
             s[i] = pulp.LpVariable(f"s{i}", lowBound=0)
         
         # 1
@@ -503,14 +507,14 @@ class Macbeth:
         prob += s[1] == 1, "s1_fixo"
 
         # 2
-        for i in range(2, len(self.classes)):
+        for i in range(2, len(self.classes)-1):
             prob += s[i] - s[i-1] >= 1, f"s{i}_ordem_minima"
 
         # 3
         for i in range(2, len(self.criterias)+1):
             for j in range(1, i):
                 # p_i - p_j >= theta
-                prob += p[j] - p[i] >= theta, f"Rinit_{i}_{j}_ordem_minima"
+                prob += p[j] - p[i] >= theta, f"Rinit_{j}_{i}_ordem_minima"
         
         # 4
         prob += p[len(self.criterias)] == self.minimun_rank_value, "pmax_fixo"
@@ -528,41 +532,45 @@ class Macbeth:
         for i in range(len(self.criterias)):
             for j in range(i+1,len(self.criterias)):
                 k = self.judgment_matrix[i][j]  
-                if k == 0:
-                    continue # ignora indiferenças
+                # if k == 0:
+                #     continue # ignora indiferenças
                 pi = i + 1
                 pj = j + 1
-                pi_index = len(self.classes) - pi+1
-                pj_index = len(self.classes) - pj+1
-                if k == len(self.classes): 
+                pi_index = len(self.classes) - pi # tinha +1 aqui
+                pj_index = len(self.classes) - pj # tinha +1 aqui
+                if k == len(self.classes)-1: 
                     # 6'
                     prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
                     
                 else:
-                    # 5'
-                    prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
-                    prob += p[pi] - p[pj] <= s[k] + c, f"R_{pi_index}_{pj_index}_classe_{k}_U"
-                    # 7
-                    beta[(pi, pj)] = pulp.LpVariable(f"b_{pi_index}_{pj_index}", lowBound=0)
-                    gamma[(pi, pj)] = pulp.LpVariable(f"g_{pi_index}_{pj_index}", lowBound=0)
-                    prob += (p[pi] - p[pj] == s[k] + beta[(pi, pj)] - gamma[(pi, pj)]), f"BETAGAM_Eq_{pi_index}_{pj_index}_k{k}"
-                    # 9      
-                    epsilon[(pi, pj)] = pulp.LpVariable(f"e_{pi_index}_{pj_index}", lowBound=0)
-                    eta[(pi, pj)] = pulp.LpVariable(f"n_{pi_index}_{pj_index}", lowBound=0)
-                    prob += (p[pi] - p[pj] == epsilon[(pi, pj)] - eta[(pi, pj)] +(s[k] + s[k-1] + theta) / 2), f"EPETA_Eq_{pi_index}_{pj_index}_k{k}" # Centro do intervalo = (s[k] + s[k-1] + theta) / 2
-                    # Adiciona na função objetivo
-                    objetivo_eps_eta.append(epsilon[(pi, pj)])
-                    objetivo_eps_eta.append(eta[(pi, pj)])
+                    if k == 0:
+                        del prob.constraints[f"Rinit_{pi}_{pj}_ordem_minima"]
+                        prob += p[pi] == p[pj], f"R_{pi_index}_{pj_index}_classe_{k}_INDIFERENTES"
+                    else:
+                        # 5'
+                        prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
+                        prob += p[pi] - p[pj] <= s[k] + c, f"R_{pi_index}_{pj_index}_classe_{k}_U"
+                        # 7
+                        beta[(pi, pj)] = pulp.LpVariable(f"b_{pi_index}_{pj_index}", lowBound=0)
+                        gamma[(pi, pj)] = pulp.LpVariable(f"g_{pi_index}_{pj_index}", lowBound=0)
+                        prob += (p[pi] - p[pj] == s[k] + beta[(pi, pj)] - gamma[(pi, pj)]), f"BETAGAM_Eq_{pi_index}_{pj_index}_k{k}"
+                        # 9      
+                        epsilon[(pi, pj)] = pulp.LpVariable(f"e_{pi_index}_{pj_index}", lowBound=0)
+                        eta[(pi, pj)] = pulp.LpVariable(f"n_{pi_index}_{pj_index}", lowBound=0)
+                        prob += (p[pi] - p[pj] == epsilon[(pi, pj)] - eta[(pi, pj)] +(s[k] + s[k-1] + theta) / 2), f"EPETA_Eq_{pi_index}_{pj_index}_k{k}" # Centro do intervalo = (s[k] + s[k-1] + theta) / 2
+                        # Adiciona na função objetivo
+                        objetivo_eps_eta.append(epsilon[(pi, pj)])
+                        objetivo_eps_eta.append(eta[(pi, pj)])
 
-                if k != 1:
+                if k != 1 and k != 0:
                     # 8
                     alpha[(pi, pj)] = pulp.LpVariable(f"a_{pi_index}_{pj_index}", lowBound=0)
                     delta[(pi, pj)] = pulp.LpVariable(f"d_{pi_index}_{pj_index}", lowBound=0)
                     prob += (p[pi] - p[pj] == s[k-1] + delta[(pi, pj)] - alpha[(pi, pj)] + theta), f"ALPHADelta_Eq_{pi_index}_{pj_index}_k{k}"
-                    if k == len(self.classes):
+                    if k == len(self.classes)-1:
                         # Adiciona na função objetivo
                         objetivo_alpha.append(alpha[(pi, pj)])
-        
+            
         prob += pulp.lpSum(objetivo_eps_eta + objetivo_alpha), "Funcao_Objetivo_MC2_Min_Desvio"
         prob.writeLP("mc2_debug.lp")
 
@@ -590,7 +598,7 @@ class Macbeth:
             p[i] = pulp.LpVariable(f"p{i}", lowBound=0)
 
         s = {}
-        for i in range(0, len(self.classes)):
+        for i in range(0, len(self.classes)-1):
             s[i] = pulp.LpVariable(f"s{i}", lowBound=0)
         
         # 1
@@ -598,7 +606,7 @@ class Macbeth:
         prob += s[1] == 1, "s1_fixo"
 
         # 2
-        for i in range(2, len(self.classes)):
+        for i in range(2, len(self.classes)-1):
             prob += s[i] - s[i-1] >= 1, f"s{i}_ordem_minima"
 
         # 3
@@ -619,27 +627,31 @@ class Macbeth:
         for i in range(len(self.criterias)):
             for j in range(i+1,len(self.criterias)):
                 k = self.judgment_matrix[i][j]  
-                if k == 0:
-                    continue # ignora indiferenças
+                # if k == 0:
+                #     continue # ignora indiferenças
                 pi = i + 1
                 pj = j + 1
-                pi_index = len(self.classes) - pi+1
-                pj_index = len(self.classes) - pj+1
-                if k == len(self.classes): 
+                pi_index = len(self.classes) - pi #tinha +1 aqui
+                pj_index = len(self.classes) - pj #tinha +1 aqui
+                if k == len(self.classes)-1: 
                     # 6'
                     prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
                     
                 else:
-                    # 5'
-                    prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
-                    prob += p[pi] - p[pj] <= s[k] + c, f"R_{pi_index}_{pj_index}_classe_{k}_U"
-                    # 7
-                    beta[(pi, pj)] = pulp.LpVariable(f"b_{pi_index}_{pj_index}", lowBound=0)
-                    gamma[(pi, pj)] = pulp.LpVariable(f"g_{pi_index}_{pj_index}", lowBound=0)
-                    prob += (p[pi] - p[pj] == s[k] + beta[(pi, pj)] - gamma[(pi, pj)]), f"BETAGAM_Eq_{pi_index}_{pj_index}_k{k}"
-                    objetivo_alpha_beta.append(beta[(pi, pj)])
+                    if k == 0:
+                        del prob.constraints[f"Rinit_{pi}_{pj}_ordem_minima"]
+                        prob += p[pi] == p[pj], f"R_{pi_index}_{pj_index}_classe_{k}_INDIFERENTES"
+                    else:
+                        # 5'
+                        prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
+                        prob += p[pi] - p[pj] <= s[k] + c, f"R_{pi_index}_{pj_index}_classe_{k}_U"
+                        # 7
+                        beta[(pi, pj)] = pulp.LpVariable(f"b_{pi_index}_{pj_index}", lowBound=0)
+                        gamma[(pi, pj)] = pulp.LpVariable(f"g_{pi_index}_{pj_index}", lowBound=0)
+                        prob += (p[pi] - p[pj] == s[k] + beta[(pi, pj)] - gamma[(pi, pj)]), f"BETAGAM_Eq_{pi_index}_{pj_index}_k{k}"
+                        objetivo_alpha_beta.append(beta[(pi, pj)])
 
-                if k != 1:
+                if k != 1 and k != 0:
                     # 8
                     alpha[(pi, pj)] = pulp.LpVariable(f"a_{pi_index}_{pj_index}", lowBound=0)
                     delta[(pi, pj)] = pulp.LpVariable(f"d_{pi_index}_{pj_index}", lowBound=0)
@@ -673,7 +685,7 @@ class Macbeth:
             p[i] = pulp.LpVariable(f"p{i}", lowBound=0) 
 
         s = {}
-        for i in range(0, len(self.classes)):
+        for i in range(0, len(self.classes)-1):
             s[i] = pulp.LpVariable(f"s{i}", lowBound=0)
         
         # 1
@@ -681,7 +693,7 @@ class Macbeth:
         prob += s[1] == 1, "s1_fixo"
 
         # 2
-        for i in range(2, len(self.classes)):
+        for i in range(2, len(self.classes)-1):
             prob += s[i] - s[i-1] >= 1, f"s{i}_ordem_minima"
 
         # 3
@@ -702,20 +714,23 @@ class Macbeth:
         for i in range(len(self.criterias)):
             for j in range(i+1,len(self.criterias)):
                 k = self.judgment_matrix[i][j]  
-                if k == 0:
-                    continue # ignora indiferenças
+                # if k == 0:
+                #     continue # ignora indiferenças
                 pi = i + 1
                 pj = j + 1
-                pi_index = len(self.classes) - pi+1
-                pj_index = len(self.classes) - pj+1
-                if k != len(self.classes): 
+                pi_index = len(self.classes) - pi # tinha +1 aqui
+                pj_index = len(self.classes) - pj # tinha +1 aqui
+                if k != len(self.classes)-1: 
                     # 7
                     beta[(pi, pj)] = pulp.LpVariable(f"b_{pi_index}_{pj_index}", lowBound=0)
                     gamma[(pi, pj)] = pulp.LpVariable(f"g_{pi_index}_{pj_index}", lowBound=0)
                     prob += (p[pj] - p[pi] == s[k] + beta[(pi, pj)] - gamma[(pi, pj)]), f"BETAGAM_Eq_{pi_index}_{pj_index}_k{k}"
                     objetivo_alpha_beta.append(beta[(pi, pj)])
-
-                if k != 1:
+                else:
+                    if k == 0:
+                        del prob.constraints[f"Rinit_{pi}_{pj}_ordem_minima"]
+                        prob += p[pi] == p[pj], f"R_{pi_index}_{pj_index}_classe_{k}_INDIFERENTES"
+                if k != 1 and k != 0:
                     # 8
                     alpha[(pi, pj)] = pulp.LpVariable(f"a_{pi_index}_{pj_index}", lowBound=0)
                     delta[(pi, pj)] = pulp.LpVariable(f"d_{pi_index}_{pj_index}", lowBound=0)
