@@ -427,13 +427,15 @@ class Macbeth:
         prob = pulp.LpProblem("Minimizar_c", pulp.LpMinimize)
         theta = self.sensibility_value
         c = pulp.LpVariable("c", lowBound=0)
+        criterias_count = len(self.criterias)
+        classes_count = len(self.classes)
 
         p = {}
-        for i in range(1,len(self.criterias)+1):
+        for i in range(1,criterias_count+1):
             p[i] = pulp.LpVariable(f"p{i}", lowBound=0) 
 
         s = {}
-        for i in range(0, len(self.classes)-1):
+        for i in range(0, classes_count-1):
             s[i] = pulp.LpVariable(f"s{i}", lowBound=0)
         
         # 1
@@ -441,32 +443,32 @@ class Macbeth:
         prob += s[1] == 1, "R_s1_fixo"
 
         # 2
-        for i in range(2, len(self.classes)-1):
+        for i in range(2, classes_count-1):
             prob += s[i] - s[i-1] >= 1, f"R_s{i}_ordem_minima"
 
         # 3
-        for i in range(2, len(self.criterias)+1):
+        for i in range(2, criterias_count+1):
             for j in range(1, i):
                 # p_i - p_j >= theta
                 prob += p[j] - p[i] >= theta, f"R_{j}_{i}_ordem_minima"
         
         # 4
-        prob += p[len(self.criterias)] == self.minimun_rank_value, "R_pMAX_fixo"
+        prob += p[criterias_count] == self.minimun_rank_value, "R_pMAX_fixo"
 
         # 5-6
-        for k in range(0,len(self.classes)):
-            for i in range(len(self.criterias)):
-                for j in range(i+1,len(self.criterias)):
+        for k in range(0,classes_count):
+            for i in range(criterias_count):
+                for j in range(i+1,criterias_count):
                     pi = i + 1
                     pj = j + 1
-                    pi_index = len(self.classes) - pi-1
-                    pj_index = len(self.classes) - pj-1
+                    pi_index = classes_count - pi-1
+                    pj_index = classes_count - pj-1
                     if self.judgment_matrix[i][j] == k:
                         if k == 0:
                             del prob.constraints[f"R_{pi}_{pj}_ordem_minima"]
                             prob += p[pi] == p[pj], f"R_{pi_index}_{pj_index}_classe_{k}_INDIFERENTES"
                         else:
-                            if k == len(self.classes)-1: 
+                            if k == classes_count-1: 
                                 prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
                             else:
                                 prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
@@ -493,13 +495,15 @@ class Macbeth:
         prob = pulp.LpProblem("IntervalosDeClasse", pulp.LpMinimize)
         theta = self.sensibility_value
         c = self.c_min
+        criterias_count = len(self.criterias)
+        classes_count = len(self.classes)
 
         p = {}
-        for i in range(1,len(self.criterias)+1):
+        for i in range(1,criterias_count+1):
             p[i] = pulp.LpVariable(f"p{i}", lowBound=0)
 
         s = {}
-        for i in range(0, len(self.classes)-1):
+        for i in range(0, classes_count-1):
             s[i] = pulp.LpVariable(f"s{i}", lowBound=0)
         
         # 1
@@ -507,17 +511,17 @@ class Macbeth:
         prob += s[1] == 1, "s1_fixo"
 
         # 2
-        for i in range(2, len(self.classes)-1):
+        for i in range(2, classes_count-1):
             prob += s[i] - s[i-1] >= 1, f"s{i}_ordem_minima"
 
         # 3
-        for i in range(2, len(self.criterias)+1):
+        for i in range(2, criterias_count+1):
             for j in range(1, i):
                 # p_i - p_j >= theta
                 prob += p[j] - p[i] >= theta, f"Rinit_{j}_{i}_ordem_minima"
         
         # 4
-        prob += p[len(self.criterias)] == self.minimun_rank_value, "pmax_fixo"
+        prob += p[criterias_count] == self.minimun_rank_value, "pmax_fixo"
 
         # 5' - 9
         beta = {}
@@ -529,16 +533,16 @@ class Macbeth:
         objetivo_eps_eta = []
         objetivo_alpha = []
         # 5'-9
-        for i in range(len(self.criterias)):
-            for j in range(i+1,len(self.criterias)):
+        for i in range(criterias_count):
+            for j in range(i+1,criterias_count):
                 k = self.judgment_matrix[i][j]  
                 # if k == 0:
                 #     continue # ignora indiferenças
                 pi = i + 1
                 pj = j + 1
-                pi_index = len(self.classes) - pi # tinha +1 aqui
-                pj_index = len(self.classes) - pj # tinha +1 aqui
-                if k == len(self.classes)-1: 
+                pi_index = classes_count - pi # tinha +1 aqui
+                pj_index = classes_count - pj # tinha +1 aqui
+                if k == classes_count-1: 
                     # 6'
                     prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
                     
@@ -567,7 +571,7 @@ class Macbeth:
                     alpha[(pi, pj)] = pulp.LpVariable(f"a_{pi_index}_{pj_index}", lowBound=0)
                     delta[(pi, pj)] = pulp.LpVariable(f"d_{pi_index}_{pj_index}", lowBound=0)
                     prob += (p[pi] - p[pj] == s[k-1] + delta[(pi, pj)] - alpha[(pi, pj)] + theta), f"ALPHADelta_Eq_{pi_index}_{pj_index}_k{k}"
-                    if k == len(self.classes)-1:
+                    if k == classes_count-1:
                         # Adiciona na função objetivo
                         objetivo_alpha.append(alpha[(pi, pj)])
             
@@ -592,13 +596,15 @@ class Macbeth:
         prob = pulp.LpProblem("IntervalosDeClasse", pulp.LpMinimize)
         theta = self.sensibility_value
         c = self.c_min
+        criterias_count = len(self.criterias)
+        classes_count = len(self.classes)
 
         p = {}
-        for i in range(1,len(self.criterias)+1):
+        for i in range(1,criterias_count+1):
             p[i] = pulp.LpVariable(f"p{i}", lowBound=0)
 
         s = {}
-        for i in range(0, len(self.classes)-1):
+        for i in range(0, classes_count-1):
             s[i] = pulp.LpVariable(f"s{i}", lowBound=0)
         
         # 1
@@ -606,17 +612,17 @@ class Macbeth:
         prob += s[1] == 1, "s1_fixo"
 
         # 2
-        for i in range(2, len(self.classes)-1):
+        for i in range(2, classes_count-1):
             prob += s[i] - s[i-1] >= 1, f"s{i}_ordem_minima"
 
         # 3
-        for i in range(2, len(self.criterias)+1):
+        for i in range(2, criterias_count+1):
             for j in range(1, i):
                 # p_i - p_j >= theta
                 prob += p[j] - p[i] >= theta, f"Rinit_{j}_{i}_ordem_minima"
         
         # 4
-        prob += p[len(self.criterias)] == self.minimun_rank_value, "pmax_fixo"
+        prob += p[criterias_count] == self.minimun_rank_value, "pmax_fixo"
 
         # 5' - 8
         beta = {}
@@ -624,16 +630,16 @@ class Macbeth:
         alpha = {}
         delta = {}
         objetivo_alpha_beta = []
-        for i in range(len(self.criterias)):
-            for j in range(i+1,len(self.criterias)):
+        for i in range(criterias_count):
+            for j in range(i+1,criterias_count):
                 k = self.judgment_matrix[i][j]  
                 # if k == 0:
                 #     continue # ignora indiferenças
                 pi = i + 1
                 pj = j + 1
-                pi_index = len(self.classes) - pi #tinha +1 aqui
-                pj_index = len(self.classes) - pj #tinha +1 aqui
-                if k == len(self.classes)-1: 
+                pi_index = classes_count - pi #tinha +1 aqui
+                pj_index = classes_count - pj #tinha +1 aqui
+                if k == classes_count-1: 
                     # 6'
                     prob += p[pi] - p[pj] >= theta + s[k-1] - c, f"R_{pi_index}_{pj_index}_classe_{k}_L"
                     
@@ -679,13 +685,15 @@ class Macbeth:
         """Programa MC4 Do MACBETH"""
         prob = pulp.LpProblem("IntervalosDeClasse", pulp.LpMinimize)
         theta = self.sensibility_value
+        criterias_count = len(self.criterias)
+        classes_count = len(self.classes)
 
         p = {}
-        for i in range(1,len(self.criterias)+1):
+        for i in range(1,criterias_count+1):
             p[i] = pulp.LpVariable(f"p{i}", lowBound=0) 
 
         s = {}
-        for i in range(0, len(self.classes)-1):
+        for i in range(0, classes_count-1):
             s[i] = pulp.LpVariable(f"s{i}", lowBound=0)
         
         # 1
@@ -693,11 +701,11 @@ class Macbeth:
         prob += s[1] == 1, "s1_fixo"
 
         # 2
-        for i in range(2, len(self.classes)-1):
+        for i in range(2, classes_count-1):
             prob += s[i] - s[i-1] >= 1, f"s{i}_ordem_minima"
 
         # 3
-        for i in range(2, len(self.criterias)+1):
+        for i in range(2, criterias_count+1):
             for j in range(1, i):
                 # p_i - p_j >= theta
                 prob += p[i] - p[j] >= theta, f"Rinit_{i}_{j}_ordem_minima"
@@ -711,16 +719,16 @@ class Macbeth:
         alpha = {}
         delta = {}
         objetivo_alpha_beta = []
-        for i in range(len(self.criterias)):
-            for j in range(i+1,len(self.criterias)):
+        for i in range(criterias_count):
+            for j in range(i+1,criterias_count):
                 k = self.judgment_matrix[i][j]  
                 # if k == 0:
                 #     continue # ignora indiferenças
                 pi = i + 1
                 pj = j + 1
-                pi_index = len(self.classes) - pi # tinha +1 aqui
-                pj_index = len(self.classes) - pj # tinha +1 aqui
-                if k != len(self.classes)-1: 
+                pi_index = classes_count - pi # tinha +1 aqui
+                pj_index = classes_count - pj # tinha +1 aqui
+                if k != classes_count-1: 
                     # 7
                     beta[(pi, pj)] = pulp.LpVariable(f"b_{pi_index}_{pj_index}", lowBound=0)
                     gamma[(pi, pj)] = pulp.LpVariable(f"g_{pi_index}_{pj_index}", lowBound=0)
